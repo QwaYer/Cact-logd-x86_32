@@ -1,16 +1,16 @@
 /*
- * logd — системный логгер CactOS (упрощённый аналог syslogd/klogd).
+ * logd — system logger for CactOS (simplified analog of syslogd/klogd).
  *
- * Читает кольцевой буфер ядра /dev/kmsg (offset-based: read() сам двигает
- * файловый курсор) и дописывает строки в текстовый лог-файл. Буфер ядра
- * конечен, поэтому logd опрашивает /dev/kmsg часто, чтобы ничего не терять.
+ * Reads the kernel ring buffer /dev/kmsg (offset-based: read() advances the
+ * file cursor itself) and appends lines to a text log file. The kernel
+ * buffer is finite, so logd polls /dev/kmsg frequently so that nothing is lost.
  *
- * Запускается супервизором cgoct как /sbin/logd (см. Cgoct-x86_32).
+ * Started by the cgoct supervisor as /sbin/logd (see Cgoct-x86_32).
  *
- * /etc/logd.conf (все ключи необязательны; создаётся при первом запуске):
- *   file=/var/log/kmsg.log   — куда писать лог ядра
- *   interval=2               — пауза (сек) между опросами, когда новых строк нет
- *   console=1                — дублировать строки на /dev/console
+ * /etc/logd.conf (all keys optional; created on first start):
+ *   file=/var/log/kmsg.log   — where to write the kernel log
+ *   interval=2               — pause (sec) between polls when there are no new lines
+ *   console=1                — duplicate lines to /dev/console
  */
 
 #include <stdint.h>
@@ -32,13 +32,13 @@ static int  interval_sec  = 2;
 static int  console_on    = 0;
 static int  out_fd        = -1;
 
-/* Конфиг по умолчанию: пишется при первом запуске, если файла ещё нет. */
+/* Default config: written on first start if the file does not exist yet. */
 static const char default_config[] =
     "# logd config - auto-generated on first start.\n"
     "#\n"
-    "# file     - куда писать лог ядра\n"
-    "# interval - пауза между опросами /dev/kmsg (сек)\n"
-    "# console  - дублировать на /dev/console (0|1)\n"
+    "# file     - where to write the kernel log\n"
+    "# interval - pause between /dev/kmsg polls (sec)\n"
+    "# console  - duplicate to /dev/console (0|1)\n"
     "\n"
     "file=/var/log/kmsg.log\n"
     "interval=2\n"
@@ -90,7 +90,7 @@ static void config_load(void) {
     fclose(f);
 }
 
-/* Написать одну готовую строку (с '\n') в лог и, по желанию, на консоль. */
+/* Write one complete line (with '\n') to the log and, optionally, to the console. */
 static void emit_line(char *line, int len) {
     if (out_fd < 0) return;
     write(out_fd, line, (size_t)len);
@@ -103,7 +103,7 @@ static void emit_line(char *line, int len) {
     }
 }
 
-/* Сборка строк из потока байт. */
+/* Assembling lines from a byte stream. */
 static char carry[MAX_LINE + 2];
 static int  carry_len = 0;
 
@@ -119,11 +119,11 @@ static void handle_chunk(const char *data, int n) {
         } else if (carry_len < MAX_LINE) {
             carry[carry_len++] = data[i];
         }
-        /* строка длиннее MAX_LINE — байт отбрасывается */
+        /* line longer than MAX_LINE — byte is dropped */
     }
 }
 
-/* Накопленный хвост без '\n' (ядро отдаёт и незакрытую строку). */
+/* Accumulated tail without '\n' (the kernel also returns an unterminated line). */
 static void flush_carry(void) {
     if (carry_len > 0) {
         carry[carry_len++] = '\n';
@@ -150,7 +150,7 @@ int main(int argc, char *argv[]) {
     int kmsg = open(KMSG_PATH, O_RDONLY);
     if (kmsg < 0) {
         printf("logd: cannot open %s, retrying\n", KMSG_PATH);
-        /* Ждём появления узла — не выходим, чтобы не дёргать супервизор. */
+        /* Wait for the node to appear — do not exit, so as not to bother the supervisor. */
         while (kmsg < 0) {
             sleep((unsigned int)interval_sec);
             kmsg = open(KMSG_PATH, O_RDONLY);
